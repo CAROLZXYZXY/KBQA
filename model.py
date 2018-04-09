@@ -1,10 +1,4 @@
-'''HR-BiLSTM
-    Input: emb_size, emb_dim, word_emb, 
-           hidden_size(max_q_len),
-    
-'''
 import sys
-
 import torch as th
 import torch.nn.functional as F
 from torch import nn
@@ -42,10 +36,10 @@ class HR_BiLSTM(nn.Module):
         #print('word_relation_emb.shape', word_relation.shape)
         #print()
 
-        self.bilstm_1.flatten_parameters()
+#        self.bilstm_1.flatten_parameters()
         question_out_1, question_hidden = self.bilstm_1(question)
         #print('question_out_1.shape', question_out_1.shape)
-        self.bilstm_2.flatten_parameters()
+#        self.bilstm_2.flatten_parameters()
         question_out_2, _ = self.bilstm_2(question_out_1)
         #print('question_out_2.shape', question_out_2.shape)
         
@@ -62,10 +56,10 @@ class HR_BiLSTM(nn.Module):
         #print('question_representation.shape', question_representation.shape) 
 
         #print()
-        self.bilstm_1.flatten_parameters()
+#        self.bilstm_1.flatten_parameters()
         word_relation_out, word_relation_hidden = self.bilstm_1(word_relation)
         #print('word_relation_out.shape', word_relation_out.shape)
-        self.bilstm_1.flatten_parameters()
+#        self.bilstm_1.flatten_parameters()
         rela_relation_out, rela_relation_hidden = self.bilstm_1(rela_relation, word_relation_hidden)
         #print('rela_relation_out.shape', rela_relation_out.shape)
         r = th.cat([rela_relation_out, word_relation_out], 0)
@@ -197,7 +191,7 @@ class ABWIM(nn.Module):
         word_relation = self.dropout(word_relation)
         #print('word_relation_emb.shape', word_relation.shape) # [21, 5861, 300]
 
-        self.bilstm.flatten_parameters()
+#        self.bilstm.flatten_parameters()
         question_out, _ = self.bilstm(question, self.init_hidden(question.shape[1]))
         #print('question_out.shape', question_out.shape) # [13, 5861, 200]
         question_out = question_out.permute(1,2,0)

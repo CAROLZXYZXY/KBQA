@@ -14,25 +14,6 @@ from data_preprocess import DataManager
 from model import HR_BiLSTM
 from model import ABWIM
 
-parser = argparse.ArgumentParser()
-# setting
-parser.add_argument('--learning_rate', type=float, default=0.1) # [0.1/0.5/1.0/2.0]
-parser.add_argument('--hidden_size', type=int, default=50) # [50/100/200/400]
-parser.add_argument('--optimizer', type=str, default='Adadelta')
-parser.add_argument('--epoch_num', type=int, default=1000)
-parser.add_argument('--batch_size', type=int, default=64)
-#parser.add_argument('--margin', type=float, default=0.1)
-#parser.add_argument('--dropout', type=float, default=0.35)
-parser.add_argument('--earlystop_tolerance', type=int, default=5)
-parser.add_argument('--save_model_path', type=str, default='')
-parser.add_argument('--pretrain_model', type=str, default=None)
-args = parser.parse_args()
-args.save_model_path = ''
-
-torch.cuda.manual_seed(1234)
-#####################################################################
-# Load data
-#####################################################################
 def batchify(data, batch_size):
     ''' Input: training_data_list [[(question, pos_relas, pos_words, neg_relas, neg_words) * neg_size] * q_size]
         Return: [[(question, pos_relas, pos_words, neg_relas, neg_words)*neg_size] * batch_size] * nb_batch]
@@ -41,56 +22,6 @@ def batchify(data, batch_size):
     batch_data = [data[idx*batch_size:(idx+1)*batch_size] for idx in range(nb_batch)]
     print('nb_batch', len(batch_data), 'batch_size', len(batch_data[0]))
     return batch_data
-
-corpus = DataManager()
-# shuffle training data
-#shuffle(corpus.token_train_data)
-
-## split training data to train and validation
-#split_num = int(0.9*len(corpus.token_train_data))
-#print('split_num=', split_num)
-#train_data = corpus.token_train_data[:split_num]
-#val_data = corpus.token_train_data[split_num:]
-#print('training data length:', len(train_data))
-#print('validation data length:', len(val_data))
-#print('test data length:', len(corpus.token_test_data))
-#print()
-#
-#''' batchify questions
-#    uncomment Line 119, 120
-#'''
-##batch_train_data = batchify(train_data, args.batch_size)
-#''' batchify train_objs
-#    uncomment Line 121
-#'''
-#flat_train_data = [obj for q_obj in train_data for obj in q_obj]
-#print('len(flat_train_data)', len(flat_train_data))
-#shuffle(flat_train_data)
-#batch_train_data = batchify(flat_train_data, args.batch_size)
-#
-#val_data = batchify(val_data, 64)
-test_data = batchify(corpus.token_test_data, 64)
-print()
-#####################################################################
-# Build model
-#####################################################################
-#loss_function = nn.MarginRankingLoss(margin=args.margin)
-loss_function = nn.MarginRankingLoss()
-print('Build model')
-#q_len = corpus.maxlen_q
-#r_len = corpus.maxlen_w + corpus.maxlen_r
-#print('q_len', q_len, 'r_len', r_len)
-#model = ABWIM(args.dropout, args.hidden_size, corpus.word_embedding, corpus.rela_embedding, q_len, r_len).cuda()
-model = HR_BiLSTM(args.hidden_size, corpus.word_embedding, corpus.rela_embedding).cuda()
-model.train()
-print(model)
-if args.optimizer == 'Adadelta':
-    optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
-elif args.optimizer == 'RMSprop':
-    optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
-else:
-    optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
-
 
 def cal_acc(sorted_score_label):
     if sorted_score_label[0][1] == 1:
@@ -103,11 +34,31 @@ def save_best_model(model):
     now = datetime.datetime.now()
     if args.save_model_path == '':
         args.save_model_path = f'save_model/{now.month}{now.day}_{now.hour}h{now.minute}m.pt'
+        with open(args.save_model_path[:-3]+'.log', 'w') as outfile:
+            outfile.write(str(args))
     print('save model at {}'.format(args.save_model_path))
     with open(args.save_model_path, 'wb') as outfile:
         torch.save(model, outfile)
 
-def train():
+def train(args):
+    # Build model
+    print('Build model')
+    if args.model == 'ABWIM':
+        q_len = corpus.maxlen_q
+        r_len = corpus.maxlen_w + corpus.maxlen_r
+        print('q_len', q_len, 'r_len', r_len)
+        model = ABWIM(args.dropout, args.hidden_size, corpus.word_embedding, corpus.rela_embedding, q_len, r_len).cuda()
+    elif args.model == 'HR-BiLSTM':
+        model = HR_BiLSTM(args.hidden_size, corpus.word_embedding, corpus.rela_embedding).cuda()
+    print(model)
+
+    if args.optimizer == 'Adadelta':
+        optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
+    elif args.optimizer == 'RMSprop':
+        optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
+    else:
+        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
+
     best_model = None
     best_val_loss = None
     train_start_time = time.time()
@@ -115,14 +66,21 @@ def train():
     earlystop_counter = 0
 
     for epoch_count in range(0, args.epoch_num):
+        model.train()
+
         total_loss, total_acc = 0.0, 0.0
+        nb_question = 0
         epoch_start_time = time.time()
 
-        for batch_count, batch_data in enumerate(batch_train_data, 1):
+        for batch_count, batch_data in enumerate(train_data, 1):
             variable_start_time = time.time()
-            #training_objs = [obj for q_obj in batch_data for obj in q_obj]
-            #question, pos_relas, pos_words, neg_relas, neg_words = zip(*training_objs)
-            question, pos_relas, pos_words, neg_relas, neg_words = zip(*batch_data)
+            if args.batch_type == 'batch_question':
+                training_objs = [obj for q_obj in batch_data for obj in q_obj]
+                question, pos_relas, pos_words, neg_relas, neg_words = zip(*training_objs)
+                nb_question += len(batch_data)
+            elif args.batch_type == 'batch_obj':
+                question, pos_relas, pos_words, neg_relas, neg_words = zip(*batch_data)
+            #print('len(question)', len(question))
             q = Variable(torch.LongTensor(question)).cuda()
             p_relas = Variable(torch.LongTensor(pos_relas)).cuda()
             p_words = Variable(torch.LongTensor(pos_words)).cuda()
@@ -140,10 +98,11 @@ def train():
             loss.backward()
             optimizer.step()
             loss_backward_time = time.time()
-            total_loss += loss.data.cpu().numpy()[0]
+            #total_loss += loss.data.cpu().numpy()[0]
+            total_loss += loss.data.cpu().numpy()
             average_loss = total_loss / batch_count
 
-            # Calculate accuracy and f1
+            ## Calculate accuracy and f1
             #all_pos = all_pos_score.data.cpu().numpy()
             #all_neg = all_neg_score.data.cpu().numpy()
             #start, end = 0, 0
@@ -165,7 +124,8 @@ def train():
             #    score_label = [(x, y) for x, y in zip(score_list, label_list)]
             #    sorted_score_label = sorted(score_label, key=lambda x:x[0], reverse=True)
             #    total_acc += cal_acc(sorted_score_label)
-            #average_acc = total_acc / (batch_count * args.batch_size)
+            ##average_acc = total_acc / (batch_count * args.batch_size)
+            #average_acc = total_acc / nb_question
 
             #print(f'variable time      :{variable_end_time-variable_start_time:.3f} / {variable_end_time-epoch_start_time:.3f}')
             #print(f'model time         :{model_end_time - variable_end_time:.3f} / {model_end_time-epoch_start_time:.3f}')
@@ -173,13 +133,20 @@ def train():
 
             #writer.add_scalar('data/pre_gen_loss', loss.data[0], global_step)
             elapsed = time.time() - epoch_start_time
-            print_str = f'Epoch {epoch_count} batch_num:{batch_count} time_elapsed:{elapsed:.2f}s loss:{average_loss*1000:.4f}'
+            #print_str = f'Epoch {epoch_count} batch {batch_count} Spend Time:{elapsed:.2f}s Loss:{average_loss*1000:.4f} Acc:{average_acc:.4f} #_question:{nb_question}'
+            if args.batch_type == 'batch_question':
+                print_str = f'Epoch {epoch_count} batch {batch_count} Spend Time:{elapsed:.2f}s Loss:{average_loss*1000:.4f} #_question:{nb_question}'
+            elif args.batch_type == 'batch_obj':
+                print_str = f'Epoch {epoch_count} batch {batch_count} Spend Time:{elapsed:.2f}s Loss:{average_loss*1000:.4f}'
             print('\r', print_str, end='')
             #batch_end_time = time.time()
             #print('one batch', batch_end_time-batch_start_time)
         val_print_str, val_loss, _ = evaluation(model, 'dev')
         print('\r', print_str, 'Val', val_print_str, end='')
         print()
+        #log_str, _, test_acc = evaluation(model, 'test')
+        #print('Test', log_str)
+        #print('Test Acc', test_acc)
 
         # this section handle earlystopping
         if not best_val_loss or val_loss < best_val_loss:
@@ -201,10 +168,11 @@ def evaluation(model, mode='dev'):
     total_loss, total_acc = 0.0, 0.0
     if mode == 'test':
         input_data = test_data
+        #print(model)
     else:
         input_data = val_data
     nb_question = sum(len(batch_data) for batch_data in input_data)
-    print('nb_question', nb_question)
+    #print('nb_question', nb_question)
     
     for batch_count, batch_data in enumerate(input_data, 1):
         training_objs = [obj for q_obj in batch_data for obj in q_obj]
@@ -219,7 +187,8 @@ def evaluation(model, mode='dev'):
         pos_score = model_test(q, p_relas, p_words)
         neg_score = model_test(q, n_relas, n_words)
         loss = loss_function(pos_score, neg_score, ones)
-        total_loss += loss.data.cpu().numpy()[0]
+        #total_loss += loss.data.cpu().numpy()[0]
+        total_loss += loss.data.cpu().numpy()
         average_loss = total_loss / batch_count
 
         # Calculate accuracy and f1
@@ -244,34 +213,87 @@ def evaluation(model, mode='dev'):
             #print(total_acc)
             #input('Enter')
 
-        acc1 = total_acc / (batch_count * args.batch_size)
+#        acc1 = total_acc / (batch_count * args.batch_size)
 #        acc2 = total_acc / question_counter
 
     time_elapsed = time.time()-start_time
     average_acc = total_acc / nb_question
-    print('acc1', acc1)
+#    print('acc1', acc1)
 #    print('acc2', acc2)
-    print('average_acc', average_acc)
+#    print('average_acc', average_acc)
 #    print(question_counter, nb_question)
-    print_str = f'batch_num:{batch_count} time_elapsed:{time_elapsed:.1f}s eval_loss:{average_loss*1000:.4f} eval_acc:{average_acc:.4f}'
+    print_str = f'Batch {batch_count} Spend Time:{time_elapsed:.2f}s Eval Loss:{average_loss*1000:.4f} Eval Acc:{average_acc:.4f} Eval # question:{nb_question}'
     return print_str, average_loss, average_acc
 
 if __name__ == '__main__':
-    # Create SummaryWriter
-    #writer = SummaryWriter(log_dir=os.path.join(args.save_path, timestep, 'log'))
+    parser = argparse.ArgumentParser()
+    # setting
+    parser.add_argument('-train', default=False, action='store_true')
+    parser.add_argument('-test', default=False, action='store_true')
+    parser.add_argument('--model', type=str, required=True) # [ABWIM/HR-BiLSTM]
+    parser.add_argument('--learning_rate', type=float, default=2.0) # [0.1/0.5/1.0/2.0]
+    parser.add_argument('--hidden_size', type=int, default=50) # [50/100/200/400]
+    parser.add_argument('--optimizer', type=str, default='Adadelta')
+    parser.add_argument('--epoch_num', type=int, default=1000)
+    parser.add_argument('--batch_type', type=str, default='batch_question') # [batch_question/batch_obj]
+    parser.add_argument('--batch_question_size', type=int, default=32)
+    parser.add_argument('--batch_obj_size', type=int, default=128)
+    parser.add_argument('--earlystop_tolerance', type=int, default=5)
+    parser.add_argument('--save_model_path', type=str, default='')
+    parser.add_argument('--pretrain_model', type=str, default=None)
+    args = parser.parse_args()
+    if args.model == 'ABWIM':
+        args.margin = 0.1
+        args.dropout = 0.35
+        args.optimizer = 'Adadelta'
+    elif args.model == 'HR-BiLSTM':
+        args.margin = 0
+        args.dropout = 0
+    loss_function = nn.MarginRankingLoss(margin=args.margin)
 
-#    train()
-    if args.pretrain_model == None:
-        print('Load best model', args.save_model_path)
-        with open(args.save_model_path, 'rb') as infile:
-            model = torch.load(infile)
-    else:
-        print('Load pretrain model', args.pretrain_model)
-        with open(args.pretrain_model, 'rb') as infile:
-            model = torch.load(infile) 
-    log_str, _, test_acc = evaluation(model, 'test')
-    print(log_str)
-    print(test_acc)
+    torch.cuda.manual_seed(1234)
+    # Load data
+    corpus = DataManager()
+    if args.train:
+        # shuffle training data
+        shuffle(corpus.token_train_data)
+        # split training data to train and validation
+        split_num = int(0.9*len(corpus.token_train_data))
+        print('split_num=', split_num)
+        train_data = corpus.token_train_data[:split_num]
+        val_data = corpus.token_train_data[split_num:]
+        print('training data length:', len(train_data))
+        print('validation data length:', len(val_data))
+
+        if args.batch_type == 'batch_question':
+            # batchify questions, uncomment Line 119, 120
+            train_data = batchify(train_data, args.batch_question_size)
+        elif args.batch_type == 'batch_obj':
+            # batchify train_objs, uncomment Line 121
+            flat_train_data = [obj for q_obj in train_data for obj in q_obj]
+            print('len(flat_train_data)', len(flat_train_data))
+            shuffle(flat_train_data)
+            train_data = batchify(flat_train_data, args.batch_obj_size)
+        val_data = batchify(val_data, args.batch_question_size)
+
+        # Create SummaryWriter
+        #writer = SummaryWriter(log_dir=os.path.join(args.save_path, timestep, 'log'))
+        train(args)
+
+    if args.test:
+        print('test data length:', len(corpus.token_test_data))
+        test_data = batchify(corpus.token_test_data, args.batch_question_size)
+        if args.pretrain_model == None:
+            print('Load best model', args.save_model_path)
+            with open(args.save_model_path, 'rb') as infile:
+                model = torch.load(infile)
+        else:
+            print('Load pretrain model', args.pretrain_model)
+            with open(args.pretrain_model, 'rb') as infile:
+                model = torch.load(infile) 
+        log_str, _, test_acc = evaluation(model, 'test')
+        print(log_str)
+        print(test_acc)
     # Close writer
     #writer.close()
 
