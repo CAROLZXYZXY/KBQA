@@ -46,7 +46,7 @@ def train(args):
     if args.model == 'ABWIM':
         q_len = corpus.maxlen_q
         r_len = corpus.maxlen_w + corpus.maxlen_r
-        print('q_len', q_len, 'r_len', r_len)
+        #print('q_len', q_len, 'r_len', r_len)
         model = ABWIM(args.dropout, args.hidden_size, corpus.word_embedding, corpus.rela_embedding, q_len, r_len).cuda()
     elif args.model == 'HR-BiLSTM':
         model = HR_BiLSTM(args.hidden_size, corpus.word_embedding, corpus.rela_embedding).cuda()
@@ -168,7 +168,7 @@ def evaluation(model, mode='dev'):
     total_loss, total_acc = 0.0, 0.0
     if mode == 'test':
         input_data = test_data
-        #print(model)
+        #print(model_test)
     else:
         input_data = val_data
     nb_question = sum(len(batch_data) for batch_data in input_data)
@@ -177,6 +177,11 @@ def evaluation(model, mode='dev'):
     for batch_count, batch_data in enumerate(input_data, 1):
         training_objs = [obj for q_obj in batch_data for obj in q_obj]
         question, pos_relas, pos_words, neg_relas, neg_words = zip(*training_objs)
+        #print(question[:5])
+        #print(pos_relas[:5])
+        #print(pos_words[:5])
+        #print(neg_relas[:5])
+        #print(neg_words[:5])
         q = Variable(torch.LongTensor(question)).cuda()
         p_relas = Variable(torch.LongTensor(pos_relas)).cuda()
         p_words = Variable(torch.LongTensor(pos_words)).cuda()
@@ -206,6 +211,7 @@ def evaluation(model, mode='dev'):
             label_list += [0] * len(batch_neg_score)
             start = end
             score_label = [(x, y) for x, y in zip(score_list, label_list)]
+            #print(score_label[:10])
             #print('len(score_list)', len(score_list), 'len(label_list)', len(label_list), 'len(score_label)', len(score_label))
             sorted_score_label = sorted(score_label, key=lambda x:x[0], reverse=True)
             #print(sorted_score_label)
