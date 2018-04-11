@@ -158,8 +158,7 @@ class ABWIM(nn.Module):
         self.bilstm = nn.LSTM(word_emb.shape[1], 
                               hidden_size, 
                               num_layers=self.nb_layers, 
-                              bidirectional=True, 
-                              dropout=dropout_rate)
+                              bidirectional=True)
         # Attention
         self.W = nn.Parameter(th.rand((hidden_size*2, hidden_size*2))).cuda()
         # CNN layer
@@ -183,47 +182,32 @@ class ABWIM(nn.Module):
 
         question = self.word_embedding(question)
         question = self.dropout(question)
-        #print('question_emb.shape', question.shape) # [13, 5861, 300]
         rela_relation = self.rela_embedding(rela_relation)
         rela_relation = self.dropout(rela_relation)
-        #print('rela_relation_emb.shape', rela_relation.shape) # [12, 5861, 300]
         word_relation = self.word_embedding(word_relation)
         word_relation = self.dropout(word_relation)
-        #print('word_relation_emb.shape', word_relation.shape) # [21, 5861, 300]
 
 #        self.bilstm.flatten_parameters()
-        #question_out, _ = self.bilstm(question, self.init_hidden(question.shape[1]))
         question_out, _ = self.bilstm(question)
-        #print('question_out.shape', question_out.shape) # [13, 5861, 200]
         question_out = question_out.permute(1,2,0)
-        #print('question_out.shape', question_out.shape) # [5861, 200, 13]
-        #word_relation_out, word_relation_hidden = self.bilstm(word_relation, self.init_hidden(word_relation.shape[1]))
+        question_out = self.dropout(question_out)
         word_relation_out, word_relation_hidden = self.bilstm(word_relation)
         rela_relation_out, _ = self.bilstm(rela_relation, word_relation_hidden)
+        word_relation_out = self.dropout(word_relation_out)
+        rela_relation_out = self.dropout(rela_relation_out)
         relation = th.cat([rela_relation_out, word_relation_out], 0)
-        #print('relation.shape', relation.shape) # [33, 5861, 200]
         relation = relation.permute(1,0,2)
-        #print('relation.shape', relation.shape) # [5861, 33, 200]
 
         # attention layer
         energy = th.matmul(relation, self.W)
-        #print('energy.shape', energy.shape) # [12599, 33, 200]
         energy = th.matmul(energy, question_out)
-        #print('energy.shape', energy.shape) # [12599, 33, 13]
         alpha = F.softmax(energy, dim=-1)
-        #print('alpha.shape', alpha.shape) # [12599, 33, 13]
         alpha = alpha.unsqueeze(3)
-        #print('alpha.shape', alpha.shape) # [12599, 33, 13, 1]
         relation = relation.unsqueeze(2)
-        #print('relation.shape', relation.shape) # [12599, 33, 1, 200]
         atten_relation = alpha * relation
-        #print('atten_relation.shape', atten_relation.shape) # [12599, 33, 13, 200]
         atten_relation = th.sum(atten_relation, 1)
-        #print('atten_relation.shape', atten_relation.shape) # [12599, 13, 200]
         atten_relation = atten_relation.permute(0, 2, 1)
-        #print('atten_relation.shape', atten_relation.shape) # [12599, 200, 13]
         M = th.cat((question_out, atten_relation), 1)
-        #print('M.shape', M.shape) # [12599, 400, 13]
         h1 = self.maxpool_1(self.activation(self.cnn_1(M)))
         h1 = self.dropout(h1)
         h2 = self.maxpool_2(self.activation(self.cnn_2(M)))
