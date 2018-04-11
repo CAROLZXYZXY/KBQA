@@ -34,8 +34,8 @@ def save_best_model(model):
     now = datetime.datetime.now()
     if args.save_model_path == '':
         args.save_model_path = f'save_model/{now.month}{now.day}_{now.hour}h{now.minute}m.pt'
-        with open(args.save_model_path[:-3]+'.log', 'w') as outfile:
-            outfile.write(str(args))
+        with open('log.txt', 'a') as outfile:
+            outfile.write(str(args)+'\n')
     print('save model at {}'.format(args.save_model_path))
     with open(args.save_model_path, 'wb') as outfile:
         torch.save(model, outfile)
@@ -238,7 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('-test', default=False, action='store_true')
     parser.add_argument('--model', type=str, required=True) # [ABWIM/HR-BiLSTM]
     parser.add_argument('--learning_rate', type=float, default=2.0) # [0.1/0.5/1.0/2.0]
-    parser.add_argument('--hidden_size', type=int, default=50) # [50/100/200/400]
+    parser.add_argument('--hidden_size', type=int, default=100) # [50/100/200/400]
     parser.add_argument('--optimizer', type=str, default='Adadelta')
     parser.add_argument('--epoch_num', type=int, default=1000)
     parser.add_argument('--batch_type', type=str, default='batch_question') # [batch_question/batch_obj]
@@ -255,6 +255,9 @@ if __name__ == '__main__':
     elif args.model == 'HR-BiLSTM':
         args.margin = 0
         args.dropout = 0
+    else:
+        print('Cannot recognize model name')
+        sys.exit()
     loss_function = nn.MarginRankingLoss(margin=args.margin)
 
     torch.cuda.manual_seed(1234)
@@ -300,6 +303,12 @@ if __name__ == '__main__':
         log_str, _, test_acc = evaluation(model, 'test')
         print(log_str)
         print(test_acc)
+        with open('log.txt', 'a') as outfile:
+            if args.pretrain_model == None:
+                outfile.write(str(test_acc)+'\t'+args.save_model_path+'\n')
+            else:
+                outfile.write(str(test_acc)+'\t'+args.pretrain_model+'\n')
+
     # Close writer
     #writer.close()
 
