@@ -145,7 +145,7 @@ class ABWIM(nn.Module):
         self.hidden_size = hidden_size
         self.nb_layers = 1
         self.nb_filters = 100
-        #self.dropout = nn.Dropout(dropout_rate)
+        self.dropout = nn.Dropout(dropout_rate)
         # Word Embedding layer
         self.word_embedding = nn.Embedding(word_emb.shape[0], word_emb.shape[1])
         self.word_embedding.weight = nn.Parameter(th.from_numpy(word_emb).float())
@@ -182,13 +182,13 @@ class ABWIM(nn.Module):
         word_relation = th.transpose(word_relation, 0, 1)
 
         question = self.word_embedding(question)
-#        question = self.dropout(question)
+        question = self.dropout(question)
         #print('question_emb.shape', question.shape) # [13, 5861, 300]
         rela_relation = self.rela_embedding(rela_relation)
-#        rela_relation = self.dropout(rela_relation)
+        rela_relation = self.dropout(rela_relation)
         #print('rela_relation_emb.shape', rela_relation.shape) # [12, 5861, 300]
         word_relation = self.word_embedding(word_relation)
-#        word_relation = self.dropout(word_relation)
+        word_relation = self.dropout(word_relation)
         #print('word_relation_emb.shape', word_relation.shape) # [21, 5861, 300]
 
 #        self.bilstm.flatten_parameters()
@@ -225,11 +225,11 @@ class ABWIM(nn.Module):
         M = th.cat((question_out, atten_relation), 1)
         #print('M.shape', M.shape) # [12599, 400, 13]
         h1 = self.maxpool_1(self.activation(self.cnn_1(M)))
-#        h1 = self.dropout(h1)
+        h1 = self.dropout(h1)
         h2 = self.maxpool_2(self.activation(self.cnn_2(M)))
-#        h2 = self.dropout(h2)
+        h2 = self.dropout(h2)
         h3 = self.maxpool_3(self.activation(self.cnn_3(M)))
-#        h3 = self.dropout(h3)
+        h3 = self.dropout(h3)
         h = th.cat((h1, h2, h3),2)
         h = th.max(h, 2)[0]
         score = self.linear(h).squeeze()
