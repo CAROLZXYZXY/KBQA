@@ -2,8 +2,8 @@ import sys
 import time
 import argparse
 import math
+import random
 import numpy as np
-from random import shuffle
 from tensorboardX import SummaryWriter
 
 import torch
@@ -49,21 +49,27 @@ def train(args):
         #print('q_len', q_len, 'r_len', r_len)
         model = ABWIM(args.dropout, args.hidden_size, corpus.word_embedding, corpus.rela_embedding, q_len, r_len).cuda()
     elif args.model == 'HR-BiLSTM':
-        model = HR_BiLSTM(args.hidden_size, corpus.word_embedding, corpus.rela_embedding).cuda()
+        model = HR_BiLSTM(args.dropout, args.hidden_size, corpus.word_embedding, corpus.rela_embedding).cuda()
     print(model)
 
     if args.optimizer == 'Adadelta':
+        print('optimizer: Adadelta')
         optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
+    elif args.optimizer == 'Adagrad':
+        optimizer = torch.optim.Adagrad(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
     elif args.optimizer == 'RMSprop':
         optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
     else:
+        print('optimizer: SGD')
         optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
+    print()
 
     best_model = None
     best_val_loss = None
     train_start_time = time.time()
 
     earlystop_counter = 0
+    global_step = 0
 
     for epoch_count in range(0, args.epoch_num):
         model.train()
@@ -98,52 +104,58 @@ def train(args):
             loss.backward()
             optimizer.step()
             loss_backward_time = time.time()
-            #total_loss += loss.data.cpu().numpy()[0]
-            total_loss += loss.data.cpu().numpy()
+            writer.add_scalar('data/pre_gen_loss', loss.item(), global_step)
+            global_step += 1
+            if torch.__version__ == '0.3.0.post4':
+                total_loss += loss.data.cpu().numpy()[0]
+            else:
+                total_loss += loss.data.cpu().numpy()
             average_loss = total_loss / batch_count
 
-            ## Calculate accuracy and f1
-            #all_pos = all_pos_score.data.cpu().numpy()
-            #all_neg = all_neg_score.data.cpu().numpy()
-            #start, end = 0, 0
-            #for idx, q_obj in enumerate(batch_data):
-            #    end += len(q_obj)
-            #    score_list = [all_pos[start]]
-            #    #print('len(score_list), score_list')
-            #    #print(len(score_list), score_list)
-            #    batch_neg_score = all_neg[start:end]
-            #    start = end
-            #    label_list = [1]
-            #    for ns in batch_neg_score:
-            #        score_list.append(ns)
-            #    label_list += [0] * len(batch_neg_score)
-            #    #print('len(score_list), score_list')
-            #    #print(len(score_list), score_list)
-            #    #print('len(label_list), label_list')
-            #    #print(len(label_list), label_list)
-            #    score_label = [(x, y) for x, y in zip(score_list, label_list)]
-            #    sorted_score_label = sorted(score_label, key=lambda x:x[0], reverse=True)
-            #    total_acc += cal_acc(sorted_score_label)
-            ##average_acc = total_acc / (batch_count * args.batch_size)
-            #average_acc = total_acc / nb_question
+            # Calculate accuracy and f1
+            if args.batch_type == 'batch_question':
+                all_pos = all_pos_score.data.cpu().numpy()
+                all_neg = all_neg_score.data.cpu().numpy()
+                start, end = 0, 0
+                for idx, q_obj in enumerate(batch_data):
+                    end += len(q_obj)
+                    score_list = [all_pos[start]]
+                    #print('len(score_list), score_list')
+                    #print(len(score_list), score_list)
+                    batch_neg_score = all_neg[start:end]
+                    start = end
+                    label_list = [1]
+                    for ns in batch_neg_score:
+                        score_list.append(ns)
+                    label_list += [0] * len(batch_neg_score)
+                    #print('len(score_list), score_list')
+                    #print(len(score_list), score_list)
+                    #print('len(label_list), label_list')
+                    #print(len(label_list), label_list)
+                    score_label = [(x, y) for x, y in zip(score_list, label_list)]
+                    sorted_score_label = sorted(score_label, key=lambda x:x[0], reverse=True)
+                    total_acc += cal_acc(sorted_score_label)
+                #average_acc = total_acc / (batch_count * args.batch_size)
+                average_acc = total_acc / nb_question
+                elapsed = time.time() - epoch_start_time
+                print_str = f'Epoch {epoch_count} batch {batch_count} Spend Time:{elapsed:.2f}s Loss:{average_loss*1000:.4f} Acc:{average_acc:.4f} #_question:{nb_question}'
+            else:
+                elapsed = time.time() - epoch_start_time
+                print_str = f'Epoch {epoch_count} batch {batch_count} Spend Time:{elapsed:.2f}s Loss:{average_loss*1000:.4f}'
 
             #print(f'variable time      :{variable_end_time-variable_start_time:.3f} / {variable_end_time-epoch_start_time:.3f}')
             #print(f'model time         :{model_end_time - variable_end_time:.3f} / {model_end_time-epoch_start_time:.3f}')
             #print(f'loss calculate time:{loss_backward_time-model_end_time:.3f} / {loss_backward_time-epoch_start_time:.3f}')
 
-            #writer.add_scalar('data/pre_gen_loss', loss.data[0], global_step)
-            elapsed = time.time() - epoch_start_time
             #print_str = f'Epoch {epoch_count} batch {batch_count} Spend Time:{elapsed:.2f}s Loss:{average_loss*1000:.4f} Acc:{average_acc:.4f} #_question:{nb_question}'
-            if args.batch_type == 'batch_question':
-                print_str = f'Epoch {epoch_count} batch {batch_count} Spend Time:{elapsed:.2f}s Loss:{average_loss*1000:.4f} #_question:{nb_question}'
-            elif args.batch_type == 'batch_obj':
-                print_str = f'Epoch {epoch_count} batch {batch_count} Spend Time:{elapsed:.2f}s Loss:{average_loss*1000:.4f}'
-            print('\r', print_str, end='')
+            if batch_count % 10 == 0:
+                print('\r', print_str, end='')
             #batch_end_time = time.time()
             #print('one batch', batch_end_time-batch_start_time)
-        val_print_str, val_loss, _ = evaluation(model, 'dev')
-        print('\r', print_str, 'Val', val_print_str, end='')
+        print(print_str)
         print()
+        val_print_str, val_loss, _ = evaluation(model, 'dev', global_step)
+        print('Val', val_print_str)
         #log_str, _, test_acc = evaluation(model, 'test')
         #print('Test', log_str)
         #print('Test Acc', test_acc)
@@ -162,7 +174,7 @@ def train(args):
             break
     return best_model
 
-def evaluation(model, mode='dev'):
+def evaluation(model, mode='dev', global_step=None):
     model_test = model.eval()
     start_time = time.time()
     total_loss, total_acc = 0.0, 0.0
@@ -192,8 +204,10 @@ def evaluation(model, mode='dev'):
         pos_score = model_test(q, p_relas, p_words)
         neg_score = model_test(q, n_relas, n_words)
         loss = loss_function(pos_score, neg_score, ones)
-        #total_loss += loss.data.cpu().numpy()[0]
-        total_loss += loss.data.cpu().numpy()
+        if torch.__version__ == '0.3.0.post4':
+            total_loss += loss.data.cpu().numpy()[0]
+        else:
+            total_loss += loss.data.cpu().numpy()
         average_loss = total_loss / batch_count
 
         # Calculate accuracy and f1
@@ -222,21 +236,32 @@ def evaluation(model, mode='dev'):
 #        acc1 = total_acc / (batch_count * args.batch_size)
 #        acc2 = total_acc / question_counter
 
+    if mode == 'dev':
+        writer.add_scalar('val_loss', average_loss.item(), global_step)
+
     time_elapsed = time.time()-start_time
     average_acc = total_acc / nb_question
 #    print('acc1', acc1)
 #    print('acc2', acc2)
 #    print('average_acc', average_acc)
 #    print(question_counter, nb_question)
-    print_str = f'Batch {batch_count} Spend Time:{time_elapsed:.2f}s Eval Loss:{average_loss*1000:.4f} Eval Acc:{average_acc:.4f} Eval # question:{nb_question}'
+    print_str = f'Batch {batch_count} Spend Time:{time_elapsed:.2f}s Loss:{average_loss*1000:.4f} Acc:{average_acc:.4f} # question:{nb_question}'
     return print_str, average_loss, average_acc
 
 if __name__ == '__main__':
+    # Set random seed
+    torch.manual_seed(1234)
+    torch.cuda.manual_seed(1234)
+    random.seed(1234)
+    np.random.seed(1234)
+
     parser = argparse.ArgumentParser()
     # setting
     parser.add_argument('-train', default=False, action='store_true')
     parser.add_argument('-test', default=False, action='store_true')
     parser.add_argument('--model', type=str, required=True) # [ABWIM/HR-BiLSTM]
+    parser.add_argument('--dropout', type=float, default=0.35)
+    parser.add_argument('--margin', type=float, default=0.1)
     parser.add_argument('--learning_rate', type=float, default=2.0) # [0.1/0.5/1.0/2.0]
     parser.add_argument('--hidden_size', type=int, default=100) # [50/100/200/400]
     parser.add_argument('--optimizer', type=str, default='Adadelta')
@@ -250,22 +275,14 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.model == 'ABWIM':
         args.margin = 0.1
-        args.dropout = 0.35
         args.optimizer = 'Adadelta'
-    elif args.model == 'HR-BiLSTM':
-        args.margin = 0
-        args.dropout = 0
-    else:
-        print('Cannot recognize model name')
-        sys.exit()
     loss_function = nn.MarginRankingLoss(margin=args.margin)
 
-    torch.cuda.manual_seed(1234)
     # Load data
     corpus = DataManager()
     if args.train:
         # shuffle training data
-        shuffle(corpus.token_train_data)
+        random.shuffle(corpus.token_train_data)
         # split training data to train and validation
         split_num = int(0.9*len(corpus.token_train_data))
         print('split_num=', split_num)
@@ -281,12 +298,12 @@ if __name__ == '__main__':
             # batchify train_objs, uncomment Line 121
             flat_train_data = [obj for q_obj in train_data for obj in q_obj]
             print('len(flat_train_data)', len(flat_train_data))
-            shuffle(flat_train_data)
+            random.shuffle(flat_train_data)
             train_data = batchify(flat_train_data, args.batch_obj_size)
         val_data = batchify(val_data, args.batch_question_size)
 
         # Create SummaryWriter
-        #writer = SummaryWriter(log_dir=os.path.join(args.save_path, timestep, 'log'))
+        writer = SummaryWriter(log_dir='save_model/tensorboard_log')
         train(args)
 
     if args.test:
@@ -310,5 +327,5 @@ if __name__ == '__main__':
                 outfile.write(str(test_acc)+'\t'+args.pretrain_model+'\n')
 
     # Close writer
-    #writer.close()
+    writer.close()
 

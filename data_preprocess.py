@@ -16,6 +16,8 @@ class DataManager:
     def __init__(self):
         self.train_data_path = 'KBQA_RE_data/webqsp_relations/WebQSP.RE.train.with_boundary.withpool.dlnlp.txt'
         self.test_data_path = 'KBQA_RE_data/webqsp_relations/WebQSP.RE.test.with_boundary.withpool.dlnlp.txt'
+#        self.train_data_path = '1hop_2hop_data/WebQSP.1hop'
+#        self.test_data_path =  '1hop_2hop_data/WebQSP.2hop'
         self.word_embedding_path = 'KBQA_RE_word_emb_300d.txt'
         self.rela_embedding_path = 'KBQA_RE_rela_emb_300d.txt'
         #self.word_embedding_path = 'KBQA_RE_word_emb_300d_last.txt'
@@ -46,29 +48,29 @@ class DataManager:
         token_test_data = self.tokenize_train_data(test_data)
         print(f'Tokened train data length:{len(token_train_data)}')
         print(f'Tokened test data length:{len(token_test_data)}')
-        self.maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w = self.find_maxlength(token_train_data)
+        self.maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w = self.find_maxlength(token_train_data+token_test_data)
         self.maxlen_r = max(maxlen_pos_r, maxlen_neg_r)
         self.maxlen_w = max(maxlen_pos_w, maxlen_neg_w)
         print(f'maxlen_q:{self.maxlen_q}, maxlen_r:{self.maxlen_r}, maxlen_w:{self.maxlen_w}')
-        print(f'maxlen_pos_r:{maxlen_pos_r}, maxlen_neg_r:{maxlen_neg_r}')
-        print(f'maxlen_pos_w:{maxlen_pos_w}, maxlen_neg_w:{maxlen_neg_w}')
-        #self.token_train_data = self.pad_train_data(token_train_data, maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w)
-        #self.token_test_data = self.pad_train_data(token_test_data, maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w)
+        #print(f'maxlen_pos_r:{maxlen_pos_r}, maxlen_neg_r:{maxlen_neg_r}')
+        #print(f'maxlen_pos_w:{maxlen_pos_w}, maxlen_neg_w:{maxlen_neg_w}')
         self.token_train_data = self.pad_train_data(token_train_data, self.maxlen_q, self.maxlen_r, self.maxlen_w, self.maxlen_r, self.maxlen_w)
         self.token_test_data = self.pad_train_data(token_test_data, self.maxlen_q, self.maxlen_r, self.maxlen_w, self.maxlen_r, self.maxlen_w)
-        #self.token_test_data = self.pad_train_data(token_test_data)
+#        self.check_input_data(test_data, self.token_test_data)
+
+    def check_input_data(self, origin_data, token_data):
         print()
         print('Check token result')
         print('# objs in the 1st question of test data:', len(test_data[0]), len(self.token_test_data[0]))
         print('1st obj in the 1st question of test data:')
         print('obj: (question, pos_relas, pos_words, neg_relas, neg_words)')
-        print(test_data[0][0])
-        print(self.token_test_data[0][0])
-        print(self.idx2word(self.token_test_data[0][0][0])) 
-        print(self.idx2word(self.token_test_data[0][0][1], 'relation'))
-        print(self.idx2word(self.token_test_data[0][0][2]))
-        print(self.idx2word(self.token_test_data[0][0][3], 'relation'))
-        print(self.idx2word(self.token_test_data[0][0][4]))
+        print(origin_data[0][0])
+        print(token_data[0][0])
+        print(self.idx2word(token_data[0][0][0])) 
+        print(self.idx2word(token_data[0][0][1], 'relation'))
+        print(self.idx2word(token_data[0][0][2]))
+        print(self.idx2word(token_data[0][0][3], 'relation'))
+        print(self.idx2word(token_data[0][0][4]))
         print()
     
     def idx2word(self, id_sentence, id_type='word'):

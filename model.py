@@ -5,10 +5,11 @@ from torch import nn
 from torch.autograd import Variable
 
 class HR_BiLSTM(nn.Module):
-    def __init__(self, hidden_size, word_emb, rela_emb):
+    def __init__(self, dropout_rate, hidden_size, word_emb, rela_emb):
         super(HR_BiLSTM, self).__init__()
         self.hidden_size = hidden_size
         self.nb_layers = 1
+        self.dropout_rate = dropout_rate
         # Word Embedding layer
         self.word_embedding = nn.Embedding(word_emb.shape[0], word_emb.shape[1])
         self.word_embedding.weight = nn.Parameter(th.from_numpy(word_emb).float())
@@ -20,6 +21,8 @@ class HR_BiLSTM(nn.Module):
         # LSTM layer
         self.bilstm_1 = nn.LSTM(word_emb.shape[1], hidden_size, num_layers=self.nb_layers, bidirectional=True)
         self.bilstm_2 = nn.LSTM(hidden_size*2, hidden_size, num_layers=self.nb_layers, bidirectional=True)
+
+        self.dropout = nn.Dropout(self.dropout_rate)
 
         self.cos = nn.CosineSimilarity(1)
         
@@ -36,11 +39,17 @@ class HR_BiLSTM(nn.Module):
         #print('word_relation_emb.shape', word_relation.shape)
         #print()
 
+        question = self.dropout(question)
+        rela_relation = self.dropout(rela_relation)
+        word_relation = self.dropout(word_relation)
+
 #        self.bilstm_1.flatten_parameters()
         question_out_1, question_hidden = self.bilstm_1(question)
+        question_out_1 = self.dropout(question_out_1)
         #print('question_out_1.shape', question_out_1.shape)
 #        self.bilstm_2.flatten_parameters()
         question_out_2, _ = self.bilstm_2(question_out_1)
+        question_out_2 = self.dropout(question_out_2)
         #print('question_out_2.shape', question_out_2.shape)
         
         # 1st way of Hierarchical Residual Matching
@@ -58,9 +67,11 @@ class HR_BiLSTM(nn.Module):
         #print()
 #        self.bilstm_1.flatten_parameters()
         word_relation_out, word_relation_hidden = self.bilstm_1(word_relation)
+        word_relation_out = self.dropout(word_relation_out)
         #print('word_relation_out.shape', word_relation_out.shape)
 #        self.bilstm_1.flatten_parameters()
         rela_relation_out, rela_relation_hidden = self.bilstm_1(rela_relation, word_relation_hidden)
+        rela_relation_out = self.dropout(rela_relation_out)
         #print('rela_relation_out.shape', rela_relation_out.shape)
         r = th.cat([rela_relation_out, word_relation_out], 0)
         r = r.permute(1, 2, 0)
