@@ -152,7 +152,7 @@ def train(args):
                 print('\r', print_str, end='')
             #batch_end_time = time.time()
             #print('one batch', batch_end_time-batch_start_time)
-        print(print_str)
+        print('\r', print_str, end='')
         print()
         val_print_str, val_loss, _ = evaluation(model, 'dev', global_step)
         print('Val', val_print_str)

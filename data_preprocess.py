@@ -32,8 +32,8 @@ class DataManager:
         self.relations_map = self.load_relations_map('KBQA_RE_data/webqsp_relations/relations.txt')
         #print('Original training questions: 3116')
         #print('Original testing questions: 1649')
-        train_data = self.gen_train_data(self.train_data_path) # len: 3116 (questions)
-        test_data = self.gen_train_data(self.test_data_path) # len: 1649 (questions)
+        train_data = self.gen_train_data(self.train_data_path) 
+        test_data = self.gen_train_data(self.test_data_path) 
         print('Filter out questions without negative training samples.')
         print(f'Train data length:{len(train_data)}')
         print(f'Test data length:{len(test_data)}')
@@ -101,16 +101,17 @@ class DataManager:
                 question = tokens[2].replace('$ARG1','').replace('$ARG2','').strip().split(' ')
                 #if len(pos_relations.split(' ')) != 1:
                 #    pos_gt_1_counter += 1
-                for pos_id in pos_relations.split(' '):
-                    pos_relas, pos_words = self.split_relation(pos_id)
-                    for neg_id in neg_relations.split(' '):
-                        # skip blank relation (relation_id 1797 = '')
-                        if neg_id == '1797':
-                            continue
-                        neg_relas, neg_words = self.split_relation(neg_id)
-                        q_list.append((question, pos_relas, pos_words, neg_relas, neg_words))
-                        #print(q_list)
-                        #sys.exit()
+                #for pos_id in pos_relations.split(' '):
+                pos_id = pos_relations.split(' ')[0]
+                pos_relas, pos_words = self.split_relation(pos_id)
+                for neg_id in neg_relations.split(' '):
+                    # skip blank relation (relation_id 1797 = '')
+                    if neg_id == '1797':
+                        continue
+                    neg_relas, neg_words = self.split_relation(neg_id)
+                    q_list.append((question, pos_relas, pos_words, neg_relas, neg_words))
+                    #print(q_list)
+                    #sys.exit()
                 if len(q_list) > 0:
                     data_list.append(q_list)
         #print(f'Time elapsed:{time.time()-start:.2f}')
