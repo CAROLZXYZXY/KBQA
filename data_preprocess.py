@@ -13,55 +13,87 @@ import torch
 from torch.autograd import Variable
 import math
 class DataManager:
-    def __init__(self):
-        self.train_data_path = 'KBQA_RE_data/webqsp_relations/WebQSP.RE.train.with_boundary.withpool.dlnlp.txt'
-        self.test_data_path = 'KBQA_RE_data/webqsp_relations/WebQSP.RE.test.with_boundary.withpool.dlnlp.txt'
+    def __init__(self, data_type):
+        self.data_type = data_type
+        if self.data_type == 'SQ':
+            self.train_data_path = 'KBQA_RE_data/sq_relations/train.replace_ne.withpool'
+            self.val_data_path = 'KBQA_RE_data/sq_relations/valid.replace_ne.withpool'
+            self.test_data_path = 'KBQA_RE_data/sq_relations/test.replace_ne.withpool'
+            self.word_embedding_path = 'SQ_word_emb_300d.txt'
+            self.rela_embedding_path = 'SQ_rela_emb_300d.txt'
+            self.relations_map = self.load_relations_map('KBQA_RE_data/sq_relations/relation.2M.list')
+        else:
+            self.train_data_path = 'KBQA_RE_data/webqsp_relations/WebQSP.RE.train.with_boundary.withpool.dlnlp.txt'
+            self.test_data_path = 'KBQA_RE_data/webqsp_relations/WebQSP.RE.test.with_boundary.withpool.dlnlp.txt'
+            self.word_embedding_path = 'KBQA_RE_word_emb_300d.txt'
+            self.rela_embedding_path = 'KBQA_RE_rela_emb_300d.txt'
+            self.relations_map = self.load_relations_map('KBQA_RE_data/webqsp_relations/relations.txt')
 #        self.train_data_path = '1hop_2hop_data/WebQSP.1hop'
 #        self.test_data_path =  '1hop_2hop_data/WebQSP.2hop'
-        self.word_embedding_path = 'KBQA_RE_word_emb_300d.txt'
-        self.rela_embedding_path = 'KBQA_RE_rela_emb_300d.txt'
         #self.word_embedding_path = 'KBQA_RE_word_emb_300d_last.txt'
         #self.rela_embedding_path = 'KBQA_RE_rela_emb_300d_last.txt'
         self.emb_dim = 300
-        self.relations_map = {}
         self.word_dic = {}
         self.word_embedding = []
         self.rela_dic = {}
         self.rela_embedding = []
 
-        self.relations_map = self.load_relations_map('KBQA_RE_data/webqsp_relations/relations.txt')
         #print('Original training questions: 3116')
         #print('Original testing questions: 1649')
-        train_data = self.gen_train_data(self.train_data_path) 
-        test_data = self.gen_train_data(self.test_data_path) 
         print('Filter out questions without negative training samples.')
+        train_data, self.train_data_len = self.gen_train_data(self.train_data_path) 
         print(f'Train data length:{len(train_data)}')
+        test_data, self.test_data_len = self.gen_train_data(self.test_data_path) 
         print(f'Test data length:{len(test_data)}')
+        if self.data_type == 'SQ':
+            val_data, self.val_data_len = self.gen_train_data(self.val_data_path) 
+            print(f'Validation data length:{len(val_data)}')
 
         if not os.path.isfile(self.word_embedding_path):
             print(self.word_embedding_path, 'not exist!')
-            self.save_embeddings(train_data+test_data)
+            if self.data_type == 'SQ':
+                self.save_embeddings(train_data+val_data+test_data)
+            else:
+                self.save_embeddings(train_data+test_data) 
             print()
         self.word_dic, self.word_embedding = self.load_embeddings(self.word_embedding_path)
         self.rela_dic, self.rela_embedding = self.load_embeddings(self.rela_embedding_path)
         token_train_data = self.tokenize_train_data(train_data)
-        token_test_data = self.tokenize_train_data(test_data)
         print(f'Tokened train data length:{len(token_train_data)}')
+        token_test_data = self.tokenize_train_data(test_data)
         print(f'Tokened test data length:{len(token_test_data)}')
-        self.maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w = self.find_maxlength(token_train_data+token_test_data)
+        if self.data_type == 'SQ':
+            token_val_data = self.tokenize_train_data(val_data)
+            print(f'Tokened val data length:{len(token_val_data)}')
+
+        if self.data_type == 'SQ':
+            self.q_seqlen, self.pos_r_seqlen, self.pos_w_seqlen, self.neg_r_seqlen, self.neg_w_seqlen, self.maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w = self.find_maxlength(token_train_data+token_val_data+token_test_data)
+        else:
+            self.q_seqlen, self.pos_r_seqlen, self.pos_w_seqlen, self.neg_r_seqlen, self.neg_w_seqlen, self.maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w = self.find_maxlength(token_train_data+token_test_data)
+#        train_question, train_pos_relas, train_pos_words, train_neg_relas, train_neg_words = zip(*token_train_data)
+#        test_question, test_pos_relas, test_pos_words, test_neg_relas, test_neg_words = zip(*token_test_data)
+#        self.seqlen_q, self.maxlen_q = self.find_maxlen(train_question + test_question)
+#        self.seqlen_pos_r, maxlen_pos_r = self.find_maxlen(train_pos_relas + test_pos_relas)
+#        self.seqlen_pos_w, maxlen_pos_w = self.find_maxlen(train_pos_words + test_pos_words)
+#        self.seqlen_neg_r, maxlen_neg_r = self.find_maxlen(train_neg_relas + test_neg_relas)
+#        self.seqlen_neg_w, maxlen_neg_w = self.find_maxlen(train_neg_words + test_neg_words)
         self.maxlen_r = max(maxlen_pos_r, maxlen_neg_r)
         self.maxlen_w = max(maxlen_pos_w, maxlen_neg_w)
         print(f'maxlen_q:{self.maxlen_q}, maxlen_r:{self.maxlen_r}, maxlen_w:{self.maxlen_w}')
+        print('len(q_seqlen)', len(self.q_seqlen))
         #print(f'maxlen_pos_r:{maxlen_pos_r}, maxlen_neg_r:{maxlen_neg_r}')
         #print(f'maxlen_pos_w:{maxlen_pos_w}, maxlen_neg_w:{maxlen_neg_w}')
+
         self.token_train_data = self.pad_train_data(token_train_data, self.maxlen_q, self.maxlen_r, self.maxlen_w, self.maxlen_r, self.maxlen_w)
+        if self.data_type == 'SQ':
+            self.token_val_data = self.pad_train_data(token_val_data, self.maxlen_q, self.maxlen_r, self.maxlen_w, self.maxlen_r, self.maxlen_w)
         self.token_test_data = self.pad_train_data(token_test_data, self.maxlen_q, self.maxlen_r, self.maxlen_w, self.maxlen_r, self.maxlen_w)
-#        self.check_input_data(test_data, self.token_test_data)
+        self.check_input_data(test_data, self.token_test_data)
 
     def check_input_data(self, origin_data, token_data):
         print()
         print('Check token result')
-        print('# objs in the 1st question of test data:', len(test_data[0]), len(self.token_test_data[0]))
+        print('# objs in the 1st question of test data:', len(origin_data[0]), len(token_data[0]))
         print('1st obj in the 1st question of test data:')
         print('obj: (question, pos_relas, pos_words, neg_relas, neg_words)')
         print(origin_data[0][0])
@@ -89,50 +121,73 @@ class DataManager:
         ''' Return training_data_list [[(question, pos_relas, pos_words, neg_relas, neg_words) * neg_size] * q_size]
         '''
         data_list = []
+        data_len_list = []
         #pos_gt_1_counter = 0
+        total_instance_counter = 0
         print('Load', path)
         #start = time.time()
         with open(path) as infile:
             for line in infile: 
                 q_list = []
+                seqlen_list = []
                 tokens = line.strip().split('\t')
                 pos_relations = tokens[0]
                 neg_relations = tokens[1]
-                question = tokens[2].replace('$ARG1','').replace('$ARG2','').strip().split(' ')
+                if self.data_type == 'SQ':
+                    question = tokens[2].strip().split(' ')
+                else:
+                    question = tokens[2].replace('$ARG1','').replace('$ARG2','').strip().split(' ')
                 #if len(pos_relations.split(' ')) != 1:
                 #    pos_gt_1_counter += 1
                 #for pos_id in pos_relations.split(' '):
                 pos_id = pos_relations.split(' ')[0]
-                pos_relas, pos_words = self.split_relation(pos_id)
+                total_instance_counter += 1
+                pos_rela, pos_word = self.split_relation(pos_id)
                 for neg_id in neg_relations.split(' '):
                     # skip blank relation (relation_id 1797 = '')
-                    if neg_id == '1797':
-                        continue
+                    if self.data_type == 'SQ':
+                        if neg_id == 'noNegativeAnswer':
+                            continue
+                    else:
+                        if neg_id == '1797':
+                            continue
                     neg_relas, neg_words = self.split_relation(neg_id)
-                    q_list.append((question, pos_relas, pos_words, neg_relas, neg_words))
+                    total_instance_counter += 1
+                    q_list.append((question, pos_rela, pos_word, neg_relas, neg_words))
+                    seqlen_list.append((len(question), len(pos_rela), len(pos_word), len(neg_relas), len(neg_words)))
                     #print(q_list)
                     #sys.exit()
                 if len(q_list) > 0:
                     data_list.append(q_list)
+                    data_len_list.append(seqlen_list)
         #print(f'Time elapsed:{time.time()-start:.2f}')
         #print('pos_gt_1_counter', pos_gt_1_counter)
-        return data_list
+        print('average instances per question', total_instance_counter/len(data_list))
+        return data_list, data_len_list
 
     def split_relation(self, relation_id):
         '''Return relation_token_list and relation_token_name_list
         '''
         rela_list = []
         word_list = []
+
         relation_names = self.relations_map[int(relation_id)]
-        for relation_name in relation_names.split('..'):
-            #last_name = relation_name.split('.')[-1]
-            #rela_list.append(last_name)
-            #for word in last_name.split('_'):
-            #    word_list.append(word)
-            for relation_token in relation_name.split('.'):
+
+        if self.data_type == 'SQ':
+            for relation_token in relation_names.strip('/').split('/'):
                 rela_list.append(relation_token)
                 for word in relation_token.split('_'):
                     word_list.append(word)
+        else:
+            for relation_name in relation_names.split('..'):
+                #last_name = relation_name.split('.')[-1]
+                #rela_list.append(last_name)
+                #for word in last_name.split('_'):
+                #    word_list.append(word)
+                for relation_token in relation_name.split('.'):
+                    rela_list.append(relation_token)
+                    for word in relation_token.split('_'):
+                        word_list.append(word)
         return rela_list, word_list
 
     def find_unique(self, data):
@@ -159,7 +214,8 @@ class DataManager:
     def load_word_embedding_from_gensim(self, input_path):
         print('Load pretrain word embedding from', input_path)
         #start = time.time()
-        model = gensim.models.Word2Vec.load_word2vec_format(input_path, binary=True)
+#        model = gensim.models.Word2Vec.load_word2vec_format(input_path, binary=True)
+        model = gensim.models.KeyedVectors.load_word2vec_format(input_path, binary=True)
         #print(f'Time elapsed:{time.time()-start:.2f}') 
         return model
 
@@ -244,7 +300,6 @@ class DataManager:
         return token_data
 
     def pad_train_data(self, data, maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w):
-    #def pad_train_data(self, data):
         ''' Input: training_data_list [[(question, pos_relas, pos_words, neg_relas, neg_words) * neg_size] * q_size]
         '''
         padded_data = []
@@ -269,31 +324,50 @@ class DataManager:
         #else:
         #    return sentence[:max_len]
 
-    def find_maxlength(self, data):
-        maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w = 0, 0, 0, 0, 0
+    def find_maxlen(self, data):
+        maxlen = 0
+        seq_len = []
         for q_data in data:
             for obj in q_data:
-                if len(obj[0]) > maxlen_q:
-                    maxlen_q = len(obj[0])
-                if len(obj[1]) > maxlen_pos_r:
-                    maxlen_pos_r = len(obj[1])
-                if len(obj[2]) > maxlen_pos_w:
-                    maxlen_pos_w = len(obj[2])
+                seq_len.append(len(obj))
+                if len(obj) > maxlen:
+                    maxlen = len(obj)
+        return seq_len, maxlen
+
+    def find_maxlength(self, data):
+        q_seqlen = []
+        pos_r_seqlen = []
+        pos_w_seqlen = []
+        neg_r_seqlen = []
+        neg_w_seqlen = []
+        maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w = 0, 0, 0, 0, 0
+        for q_data in data:
+            if len(q_data[0][0]) > maxlen_q:
+                maxlen_q = len(q_data[0][0])
+            if len(q_data[0][1]) > maxlen_pos_r:
+                maxlen_pos_r = len(q_data[0][1])
+            if len(q_data[0][2]) > maxlen_pos_w:
+                maxlen_pos_w = len(q_data[0][2])
+            for obj in q_data:
+                q_seqlen.append(len(obj[0]))
+                pos_r_seqlen.append(len(obj[1]))
+                pos_w_seqlen.append(len(obj[2]))
+                neg_r_seqlen.append(len(obj[3]))
+                neg_w_seqlen.append(len(obj[4]))
                 if len(obj[3]) > maxlen_neg_r:
                     maxlen_neg_r = len(obj[3])
                 if len(obj[4]) > maxlen_neg_w:
                     maxlen_neg_w = len(obj[4])
-        return maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w
+        return q_seqlen, pos_r_seqlen, pos_w_seqlen, neg_r_seqlen, neg_w_seqlen, maxlen_q, maxlen_pos_r, maxlen_pos_w, maxlen_neg_r, maxlen_neg_w
     
     def load_relations_map(self, path):
         ''' Return self.relations_map = {idx:relation_names}
         '''
         relations_map = {}
+        print('Load', path)
         with open(path) as infile:
-            idx = 1
-            for line in infile:
+            for idx, line in enumerate(infile, 1):
                 relations_map[idx] = line.strip()
-                idx += 1
         return relations_map
     
     def question_preprocess(self, path):

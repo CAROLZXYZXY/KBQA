@@ -87,3 +87,30 @@ Namespace(batch_obj_size=128, batch_question_size=32, batch_type='batch_obj', dr
 take 1st pos_id as answer
 Namespace(batch_obj_size=128, batch_question_size=32, batch_type='batch_obj', dropout=0.35, earlystop_tolerance=5, epoch_num=1000, hidden_size=100, learning_rate=1.0, margin=0.1, model='ABWIM', optimizer='Adadelta', pretrain_model=None, save_model_path='save_model/426_18h8m.pt', test=True, train=True)
 0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+0.7465045592705167	save_model/426_18h8m.pt
+Namespace(batch_obj_size=128, batch_question_size=32, batch_type='batch_obj', dropout=0.35, earlystop_tolerance=5, epoch_num=1000, hidden_size=100, learning_rate=1.0, margin=0.1, model='ABWIM', optimizer='Adadelta', pretrain_model=None, save_model_path='save_model/517_17h51m.pt', test=True, train=True)
+1.0	save_model/517_17h51m.pt
+1.0	save_model/517_17h51m.pt
+1.0	save_model/517_17h51m.pt
+1.0	save_model/517_17h51m.pt
+1.0	save_model/517_17h51m.pt
+1.0	save_model/517_17h51m.pt
+1.0	save_model/517_17h51m.pt
+Namespace(batch_obj_size=128, batch_question_size=32, batch_type='batch_obj', data_type='SQ', dropout=0.35, earlystop_tolerance=5, epoch_num=1000, hidden_size=100, learning_rate=1.0, margin=0.1, model='ABWIM', optimizer='Adadelta', pretrain_model=None, save_model_path='save_model/523_8h14m.pt', test=True, train=True)
+Namespace(batch_obj_size=128, batch_question_size=32, batch_type='batch_obj', data_type='SQ', dropout=0.35, earlystop_tolerance=5, epoch_num=1000, hidden_size=100, learning_rate=1.0, margin=0.1, model='ABWIM', optimizer='Adadelta', pretrain_model=None, save_model_path='save_model/523_9h59m.pt', test=True, train=True)
+Namespace(batch_obj_size=128, batch_question_size=32, batch_type='batch_question', data_type='SQ', dropout=0.3, earlystop_tolerance=5, epoch_num=1000, hidden_size=512, learning_rate=0.001, margin=0.1, model='HR-BiLSTM', optimizer='RMSprop', pretrain_model=None, save_model_path='save_model/523_10h41m.pt', test=True, train=True)
+0.9262458149352225	save_model/523_8h14m.pt
+0.9208598185258867	save_model/523_9h59m.pt
+0.9261002474646999	save_model/523_8h14m.pt
+0.9354165655781455	save_model/523_10h41m.pt

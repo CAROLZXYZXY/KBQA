@@ -2,12 +2,12 @@ import sys
 import time
 import argparse
 import math
-import random
+#import random
+from sklearn.utils import shuffle
 import numpy as np
 from tensorboardX import SummaryWriter
 
 import torch
-import torch.nn as nn
 from torch.autograd import Variable
 
 from data_preprocess import DataManager
@@ -50,7 +50,7 @@ def train(args):
         model = ABWIM(args.dropout, args.hidden_size, corpus.word_embedding, corpus.rela_embedding, q_len, r_len).cuda()
     elif args.model == 'HR-BiLSTM':
         model = HR_BiLSTM(args.dropout, args.hidden_size, corpus.word_embedding, corpus.rela_embedding).cuda()
-    print(model)
+    #print(model)
 
     if args.optimizer == 'Adadelta':
         print('optimizer: Adadelta')
@@ -86,7 +86,17 @@ def train(args):
                 nb_question += len(batch_data)
             elif args.batch_type == 'batch_obj':
                 question, pos_relas, pos_words, neg_relas, neg_words = zip(*batch_data)
+                q_len, pos_r_len, pos_w_len, neg_r_len, neg_w_len = zip(*train_data_len[batch_count-1])
+            '''
+            q_length = Variable(torch.LongTensor(q_len)).cuda()
+            pos_r_length = Variable(torch.LongTensor(pos_r_len)).cuda()
+            pos_w_length = Variable(torch.LongTensor(pos_w_len)).cuda()
+            neg_r_length = Variable(torch.LongTensor(neg_r_len)).cuda()
+            neg_w_length = Variable(torch.LongTensor(neg_w_len)).cuda()
+            '''
+                #print('len(q_len)', len(q_len)) # batch_size
             #print('len(question)', len(question))
+
             q = Variable(torch.LongTensor(question)).cuda()
             p_relas = Variable(torch.LongTensor(pos_relas)).cuda()
             p_words = Variable(torch.LongTensor(pos_words)).cuda()
@@ -98,6 +108,9 @@ def train(args):
             optimizer.zero_grad()
             all_pos_score = model(q, p_relas, p_words)
             all_neg_score = model(q, n_relas, n_words)
+#            all_pos_score = model(q, p_relas, p_words, q_length, pos_r_length, pos_w_length)
+#            sys.exit()
+#            all_neg_score = model(q, n_relas, n_words, q_length, neg_r_length, neg_w_length)
             model_end_time = time.time()
 
             loss = loss_function(all_pos_score, all_neg_score, ones)
@@ -181,19 +194,16 @@ def evaluation(model, mode='dev', global_step=None):
     if mode == 'test':
         input_data = test_data
         #print(model_test)
+        print(model_test)
     else:
         input_data = val_data
     nb_question = sum(len(batch_data) for batch_data in input_data)
-    #print('nb_question', nb_question)
-    
+    count = 0;
+    print('nb_question', nb_question)
     for batch_count, batch_data in enumerate(input_data, 1):
+        count+=1
         training_objs = [obj for q_obj in batch_data for obj in q_obj]
         question, pos_relas, pos_words, neg_relas, neg_words = zip(*training_objs)
-        #print(question[:5])
-        #print(pos_relas[:5])
-        #print(pos_words[:5])
-        #print(neg_relas[:5])
-        #print(neg_words[:5])
         q = Variable(torch.LongTensor(question)).cuda()
         p_relas = Variable(torch.LongTensor(pos_relas)).cuda()
         p_words = Variable(torch.LongTensor(pos_words)).cuda()
@@ -202,6 +212,7 @@ def evaluation(model, mode='dev', global_step=None):
         ones = Variable(torch.ones(len(question))).cuda()
         
         pos_score = model_test(q, p_relas, p_words)
+        #pos_alpha = model.ret_alpha(q, p_relas, p_words)
         neg_score = model_test(q, n_relas, n_words)
         loss = loss_function(pos_score, neg_score, ones)
         if torch.__version__ == '0.3.0.post4':
@@ -212,12 +223,15 @@ def evaluation(model, mode='dev', global_step=None):
 
         # Calculate accuracy and f1
         all_pos = pos_score.data.cpu().numpy()
+        #all_alpha = pos_alpha.data.cpu().numpy()
         all_neg = neg_score.data.cpu().numpy()
         start, end = 0, 0
         for idx, q_obj in enumerate(batch_data):
             end += len(q_obj)
             #print('start', start, 'end', end)
+            #input('Enter')
             score_list = [all_pos[start]]
+            #score_list_alpha = [all_alpha[start]]
             label_list = [1]
             batch_neg_score = all_neg[start:end]
             for ns in batch_neg_score:
@@ -225,17 +239,24 @@ def evaluation(model, mode='dev', global_step=None):
             label_list += [0] * len(batch_neg_score)
             start = end
             score_label = [(x, y) for x, y in zip(score_list, label_list)]
+            #alpha_label = [(x, y) for x, y in zip(score_list_alpha, label_list)]
+            #print("\n")
             #print(score_label[:10])
+            #print("\n")
             #print('len(score_list)', len(score_list), 'len(label_list)', len(label_list), 'len(score_label)', len(score_label))
             sorted_score_label = sorted(score_label, key=lambda x:x[0], reverse=True)
+            #sorted_alpha_label = sorted(alpha_label, key=lambda x:x[0], reverse=True)
+            #print("\n")
             #print(sorted_score_label)
+            #file = open("result.txt","w")
+            #file.write(sorted_alpha_label)
+            #file.close()
             total_acc += cal_acc(sorted_score_label)
             #print(total_acc)
-            #input('Enter')
-
 #        acc1 = total_acc / (batch_count * args.batch_size)
 #        acc2 = total_acc / question_counter
-
+   # print("\n")
+    #print(count)
     if mode == 'dev':
         writer.add_scalar('val_loss', average_loss.item(), global_step)
 
@@ -252,7 +273,7 @@ if __name__ == '__main__':
     # Set random seed
     torch.manual_seed(1234)
     torch.cuda.manual_seed(1234)
-    random.seed(1234)
+    #random.seed(1234)
     np.random.seed(1234)
 
     parser = argparse.ArgumentParser()
@@ -272,24 +293,34 @@ if __name__ == '__main__':
     parser.add_argument('--earlystop_tolerance', type=int, default=5)
     parser.add_argument('--save_model_path', type=str, default='')
     parser.add_argument('--pretrain_model', type=str, default=None)
+    parser.add_argument('--data_type', type=str, default='SQ') # [SQ/WQ]
     args = parser.parse_args()
     if args.model == 'ABWIM':
         args.margin = 0.1
         args.optimizer = 'Adadelta'
-    loss_function = nn.MarginRankingLoss(margin=args.margin)
+    loss_function = torch.nn.MarginRankingLoss(margin=args.margin)
 
     # Load data
-    corpus = DataManager()
+    corpus = DataManager(args.data_type)
     if args.train:
-        # shuffle training data
-        random.shuffle(corpus.token_train_data)
-        # split training data to train and validation
-        split_num = int(0.9*len(corpus.token_train_data))
-        print('split_num=', split_num)
-        train_data = corpus.token_train_data[:split_num]
-        val_data = corpus.token_train_data[split_num:]
-        print('training data length:', len(train_data))
-        print('validation data length:', len(val_data))
+        if args.data_type == 'SQ':
+            train_data = corpus.token_train_data
+            train_data_len = corpus.train_data_len
+            val_data = corpus.token_val_data
+            print('training data length:', len(train_data))
+            print('validation data length:', len(val_data))
+        else:
+            # shuffle training data
+            #random.shuffle(corpus.token_train_data)
+            shuffle(corpus.token_train_data, corpus.train_data_len, random_state=1234)
+            # split training data to train and validation
+            split_num = int(0.9*len(corpus.token_train_data))
+            print('split_num=', split_num)
+            train_data = corpus.token_train_data[:split_num]
+            train_data_len = corpus.train_data_len[:split_num]
+            val_data = corpus.token_train_data[split_num:]
+            print('training data length:', len(train_data))
+            print('validation data length:', len(val_data))
 
         if args.batch_type == 'batch_question':
             # batchify questions, uncomment Line 119, 120
@@ -297,9 +328,13 @@ if __name__ == '__main__':
         elif args.batch_type == 'batch_obj':
             # batchify train_objs, uncomment Line 121
             flat_train_data = [obj for q_obj in train_data for obj in q_obj]
+            flat_train_data_len = [obj for q_obj in train_data_len for obj in q_obj]
             print('len(flat_train_data)', len(flat_train_data))
-            random.shuffle(flat_train_data)
+            print('len(flat_train_data_len)', len(flat_train_data_len))
+            #random.shuffle(flat_train_data)
+            shuffle(flat_train_data, flat_train_data_len, random_state=1234)
             train_data = batchify(flat_train_data, args.batch_obj_size)
+            train_data_len = batchify(flat_train_data_len, args.batch_obj_size)
         val_data = batchify(val_data, args.batch_question_size)
 
         # Create SummaryWriter
@@ -327,5 +362,5 @@ if __name__ == '__main__':
                 outfile.write(str(test_acc)+'\t'+args.pretrain_model+'\n')
 
     # Close writer
-    writer.close()
+    #writer.close()
 

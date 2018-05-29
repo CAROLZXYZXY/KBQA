@@ -10,6 +10,9 @@ class HR_BiLSTM(nn.Module):
         self.hidden_size = hidden_size
         self.nb_layers = 1
         self.dropout_rate = dropout_rate
+        self.dropout = nn.Dropout(self.dropout_rate)
+        self.cos = nn.CosineSimilarity(1)
+        
         # Word Embedding layer
         self.word_embedding = nn.Embedding(word_emb.shape[0], word_emb.shape[1])
         self.word_embedding.weight = nn.Parameter(th.from_numpy(word_emb).float())
@@ -17,69 +20,112 @@ class HR_BiLSTM(nn.Module):
         # Rela Embedding layer
         self.rela_embedding = nn.Embedding(rela_emb.shape[0], rela_emb.shape[1])
         self.rela_embedding.weight = nn.Parameter(th.from_numpy(rela_emb).float())
-        self.rela_embedding.weight.requires_grad = False # fix the embedding matrix
+        self.rela_embedding.weight.requires_grad = True # fix the embedding matrix
         # LSTM layer
-        self.bilstm_1 = nn.LSTM(word_emb.shape[1], hidden_size, num_layers=self.nb_layers, bidirectional=True)
-        self.bilstm_2 = nn.LSTM(hidden_size*2, hidden_size, num_layers=self.nb_layers, bidirectional=True)
+        self.bilstm_1 = nn.LSTM(word_emb.shape[1], hidden_size, num_layers=self.nb_layers, bidirectional=True, batch_first=True)
+        self.bilstm_2 = nn.LSTM(hidden_size*2, hidden_size, num_layers=self.nb_layers, bidirectional=True, batch_first=True)
 
-        self.dropout = nn.Dropout(self.dropout_rate)
+    def revert_order(self, sorted_seq, sorted_seqidx):
+        ori_seq = sorted_seq.clone()
+        for new_idx, ori_idx in enumerate(sorted_seqidx):
+            ori_seq[ori_idx] = sorted_seq[new_idx]
+        return ori_seq
 
-        self.cos = nn.CosineSimilarity(1)
-        
+    def pack_seq(self, ori_seq, seqlen):
+        sorted_seqlen, sorted_seqidx = th.sort(seqlen, descending=True)
+        sorted_seq = ori_seq.clone()
+        for new_idx, ori_idx in enumerate(sorted_seqidx):
+            sorted_seq[new_idx] = ori_seq[ori_idx]
+        packed_seq  = nn.utils.rnn.pack_padded_sequence(sorted_seq, sorted_seqlen, batch_first=True)
+        return packed_seq, sorted_seqidx
+
     def forward(self, question, rela_relation, word_relation):
-        question = th.transpose(question, 0, 1)
-        rela_relation = th.transpose(rela_relation, 0, 1)
-        word_relation = th.transpose(word_relation, 0, 1)
+#    def forward(self, question, rela_relation, word_relation, q_seqlen, rela_seqlen, word_seqlen):
+        # Input shape is [batch_size, maxlen]
+        # Embedding shape is [batch_size, maxlen, emb_dim]
+        question = self.dropout(self.word_embedding(question))
+        rela_relation = self.dropout(self.rela_embedding(rela_relation))
+        word_relation = self.dropout(self.word_embedding(word_relation))
 
-        question = self.word_embedding(question)
-        #print('question_emb.shape', question.shape)
-        rela_relation = self.rela_embedding(rela_relation)
-        #print('rela_relation_emb.shape', rela_relation.shape)
-        word_relation = self.word_embedding(word_relation)
-        #print('word_relation_emb.shape', word_relation.shape)
-        #print()
-
-        question = self.dropout(question)
-        rela_relation = self.dropout(rela_relation)
-        word_relation = self.dropout(word_relation)
-
-#        self.bilstm_1.flatten_parameters()
+        # output shape of bilstm is [batch_size, maxlen, hidden_size*2]
         question_out_1, question_hidden = self.bilstm_1(question)
         question_out_1 = self.dropout(question_out_1)
-        #print('question_out_1.shape', question_out_1.shape)
-#        self.bilstm_2.flatten_parameters()
         question_out_2, _ = self.bilstm_2(question_out_1)
         question_out_2 = self.dropout(question_out_2)
-        #print('question_out_2.shape', question_out_2.shape)
+        '''pack_pad_sequence
+        packed_question, sorted_q_idx = self.pack_seq(question, q_seqlen)
+        question_out_1, question_hidden = self.bilstm_1(packed_question)
+        question_out_1, _ = th.nn.utils.rnn.pad_packed_sequence(question_out_1, batch_first=True)
+        question_out_1 = self.dropout(question_out_1)
+        packed_question_out_1, _ = self.pack_seq(question_out_1, q_seqlen)
+        question_out_2, _ = self.bilstm_2(packed_question_out_1)
+        question_out_2, _ = th.nn.utils.rnn.pad_packed_sequence(question_out_2, batch_first=True)
+        question_out_2 = self.dropout(question_out_2)
+        '''
         
         # 1st way of Hierarchical Residual Matching
         q12 = question_out_1 + question_out_2
-        q12 = q12.permute(1, 2, 0)
-        #print('q12.shape', q12.shape)
-        question_representation = nn.MaxPool1d(q12.shape[2])(q12) 
-        question_representation = question_representation.squeeze(2)
+        # Transform q12 shape from [batch_size, maxlen, hidden_size*2] to [batch_size, hidden_size*2, maxlen]
+        q12 = q12.permute(0, 2, 1)
+        # After maxpooling, the question representation shape = [batch_size, hidden_size*2]
+        question_representation = nn.MaxPool1d(q12.shape[2])(q12).squeeze()
+        print(question_representation.shape)
         # 2nd way of Hierarchical Residual Matching
         #q1_max = nn.MaxPool1d(question_out_1.shape[2])(question_out_1)
         #q2_max = nn.MaxPool1d(question_out_2.shape[2])(question_out_2)
         #question_representation = q1_max + q2_max
-        #print('question_representation.shape', question_representation.shape) 
 
-        #print()
-#        self.bilstm_1.flatten_parameters()
         word_relation_out, word_relation_hidden = self.bilstm_1(word_relation)
         word_relation_out = self.dropout(word_relation_out)
-        #print('word_relation_out.shape', word_relation_out.shape)
-#        self.bilstm_1.flatten_parameters()
+        #print(word_relation_out.shape)
         rela_relation_out, rela_relation_hidden = self.bilstm_1(rela_relation, word_relation_hidden)
         rela_relation_out = self.dropout(rela_relation_out)
-        #print('rela_relation_out.shape', rela_relation_out.shape)
-        r = th.cat([rela_relation_out, word_relation_out], 0)
-        r = r.permute(1, 2, 0)
+        #print(rela_relation_out.shape)
+        r = th.cat([rela_relation_out, word_relation_out], 1)
         #print('r.shape', r.shape)
-        relation_representation = nn.MaxPool1d(r.shape[2])(r)
-        relation_representation = relation_representation.squeeze(2)
-        #print('relation_representation.shape', relation_representation.shape)
+        r = r.permute(0, 2, 1)
+        #print('r.shape', r.shape)
+        relation_representation = nn.MaxPool1d(r.shape[2])(r).squeeze()
+        print(relation_representation.shape)
+        '''pack_pad_sequence
+        # Revert to original order
+        question_representation = self.revert_order(question_representation, sorted_q_idx)
 
+        packed_rela_relation, sorted_rela_idx = self.pack_seq(rela_relation, rela_seqlen)
+        packed_word_relation, sorted_word_idx = self.pack_seq(word_relation, word_seqlen)
+        
+        word_relation_out, word_relation_hidden = self.bilstm_1(packed_word_relation)
+        word_relation_out, _ = th.nn.utils.rnn.pad_packed_sequence(word_relation_out, batch_first=True)
+        word_relation_out = self.dropout(word_relation_out)
+        print('word_relation_out.shape', word_relation_out.shape)
+
+        # Revert to original order
+        print(len(word_relation_hidden))
+        print(len(word_relation_hidden[0]))
+        print(len(word_relation_hidden[0][0]))
+        print(len(word_relation_hidden[0][0][0]))
+        sys.exit()
+        word_relation_h = self.revert_order(word_relation_hidden[0], sorted_word_idx)
+        word_relation_c = self.revert_order(word_relation_hidden[1], sorted_word_idx)
+        # Transform to rela_relation order
+        word_relation_h = self.revert_order(word_relation_h, sorted_rela_idx)
+        word_relation_c = self.revert_order(word_relation_c, sorted_rela_idx)
+
+        rela_relation_out, rela_relation_hidden = self.bilstm_1(packed_rela_relation, (word_relation_h, word_relation_c))
+        rela_relation_out, _ = th.nn.utils.rnn.pad_packed_sequence(rela_relation_out, batch_first=True)
+        rela_relation_out = self.dropout(rela_relation_out)
+        print('rela_relation_out.shape', rela_relation_out.shape)
+        r = th.cat([rela_relation_out, word_relation_out], 0)
+        print('r.shape', r.shape)
+        r = r.permute(0, 2, 1)
+        print('r.shape', r.shape)
+        relation_representation = nn.MaxPool1d(r.shape[0])(r).squeeze()
+        print('relation_representation.shape', relation_representation.shape)
+        sys.exit()
+
+        # Revert to original order
+        relation_representation = self.revert_order(relation_representation, sorted_rela_idx)
+        '''
         score = self.cos(question_representation, relation_representation)
         #print('score.shape', score.shape)
         return score
@@ -105,7 +151,6 @@ class Model(nn.Module):
         self.cos = nn.CosineSimilarity(dim=1)
         self.tanh = nn.Tanh()
         return
-
     def forward(self, ques_x, rela_text_x, rela_x):
         ques_x = th.transpose(ques_x, 0, 1)
         rela_text_x = th.transpose(rela_text_x, 0, 1)
@@ -185,7 +230,32 @@ class ABWIM(nn.Module):
     def init_hidden(self, batch_size):
         return (Variable(th.zeros(2, batch_size, self.hidden_size)).cuda(),
                 Variable(th.zeros(2, batch_size, self.hidden_size)).cuda())
-        
+    def ret_alpha(self, question, rela_relation, word_relation):
+        question = th.transpose(question, 0, 1)
+        rela_relation = th.transpose(rela_relation, 0, 1)
+        word_relation = th.transpose(word_relation, 0, 1)
+        question = self.word_embedding(question)
+        question = self.dropout(question)
+        rela_relation = self.rela_embedding(rela_relation)
+        rela_relation = self.dropout(rela_relation)
+        word_relation = self.word_embedding(word_relation)
+        word_relation = self.dropout(word_relation)
+        #self.bilstm.flatten_parameters()
+        question_out, _ = self.bilstm(question)
+        question_out = question_out.permute(1,2,0)
+        question_out = self.dropout(question_out)
+        word_relation_out, word_relation_hidden = self.bilstm(word_relation)
+        rela_relation_out, _ = self.bilstm(rela_relation, word_relation_hidden)
+        word_relation_out = self.dropout(word_relation_out)
+        rela_relation_out = self.dropout(rela_relation_out)
+        relation = th.cat([rela_relation_out, word_relation_out], 0)
+        relation = relation.permute(1,0,2)
+
+        # attention layer
+        energy = th.matmul(relation, self.W)
+        energy = th.matmul(energy, question_out)
+        alpha = F.softmax(energy, dim=-1)
+        return alpha 
     def forward(self, question, rela_relation, word_relation):
         question = th.transpose(question, 0, 1)
         rela_relation = th.transpose(rela_relation, 0, 1)
@@ -210,6 +280,10 @@ class ABWIM(nn.Module):
         relation = relation.permute(1,0,2)
 
         # attention layer
+        #energy_tmp = energy.view(energy.shape[0], energy.shape[1]*energy.shape[2])
+        #alpha = F.softmax(energy_tmp, dim=-1)
+        #alpha = alpha.view(energy.shape[0], energy.shape[1], energy.shape[2])
+
         energy = th.matmul(relation, self.W)
         energy = th.matmul(energy, question_out)
         alpha = F.softmax(energy, dim=-1)
@@ -230,3 +304,50 @@ class ABWIM(nn.Module):
         score = self.linear(h).squeeze()
         return score
     
+if __name__ == '__main__':
+    import numpy as np
+    dropout = 0.35
+    hidden_size = 100
+    learning_rate = 1
+
+    word_embedding_path = 'SQ_word_emb_300d.txt'
+    rela_embedding_path = 'SQ_rela_emb_300d.txt'
+    word_embedding = []
+    rela_embedding = []
+    with open(word_embedding_path) as infile:
+        for line in infile:
+            tokens = line.strip().split()
+            word_embedding.append([float(x) for x in tokens[1:]]) 
+    with open(rela_embedding_path) as infile:
+        for line in infile:
+            tokens = line.strip().split()
+            rela_embedding.append([float(x) for x in tokens[1:]]) 
+    word_embedding = np.array(word_embedding)
+    rela_embedding = np.array(rela_embedding)
+
+    model = HR_BiLSTM(dropout, hidden_size, word_embedding, rela_embedding).cuda()
+    optimizer = th.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()), lr=learning_rate)
+
+    # 1 batch, batch_size = 4
+    # question : maxlen = 6
+    # pos_relas: maxlen = 3
+    # pos_words: maxlen = 5
+    question_data = [[[1,2,3,0,0,0],[1,2,3,4,0,0],[1,2,3,4,5,6],[1,2,0,0,0,0]]]
+    pos_relas = [[[1,2,3],[1,2,0],[1,2,3],[1,0,0]]]
+    pos_words = [[[1,2,0,0,0],[1,2,3,4,5],[1,0,0,0,0],[1,2,3,0,0]]]
+    q_len = [[3,4,6,2]]
+    pos_r_len = [[3,2,3,1]]
+    pos_w_len = [[2,5,1,3]]
+    for batch_count, question in enumerate(question_data, 1):
+        q_length = Variable(th.LongTensor(q_len[batch_count-1])).cuda()
+        pos_r_length = Variable(th.LongTensor(pos_r_len[batch_count-1])).cuda()
+        pos_w_length = Variable(th.LongTensor(pos_w_len[batch_count-1])).cuda()
+
+        q = Variable(th.LongTensor(question)).cuda()
+        p_relas = Variable(th.LongTensor(pos_relas[batch_count-1])).cuda()
+        p_words = Variable(th.LongTensor(pos_words[batch_count-1])).cuda()
+            
+        optimizer.zero_grad()
+        all_pos_score = model(q, p_relas, p_words)
+        #all_pos_score = model(q, p_relas, p_words, q_length, pos_r_length, pos_w_length)
+        sys.exit()
